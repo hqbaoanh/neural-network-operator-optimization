@@ -10,7 +10,7 @@ I exported a small Transformer encoder from PyTorch to ONNX and profiled it in O
 
 `profile_ort.py` runs it 100 times in ONNX Runtime and sums kernel time by operator. 
 
-On my MacBook (M3 Pro, 11 core CPU, 18 GB), `Gemm` is about 85% of kernel time across runs, and about 89% including the attention matmuls. The four weight GEMMs ($M \times K \times N$), each run twice per foward pass: 
+On my MacBook (M3 Pro, 11 core CPU, 18 GB, 1 thread), `Gemm` is about 85% of kernel time across runs, and about 89% including the attention matmuls. The four weight GEMMs ($M \times K \times N$), each run twice per forward pass: 
 
 | Layer | Shape |
 |---|---|
@@ -35,6 +35,23 @@ is nearly the same for every shape, which suggests it's limited mainly by the
 chain of dependent additions into one running sum (each add waits about 3 to 4
 cycles for the previous one), rather than by memory access.
 
+## Build and run
+ 
+Needs a C++17 compiler and CMake 3.16+, on Apple Silicon or x86-64 with AVX2.
+ 
+```bash
+cmake -B build
+cmake --build build -j
+ctest --test-dir build --output-on-failure    # correctness tests
+./build/bench                                  # benchmark
+```
+ 
+To redo the profiling:
+ 
+```bash
+pip install -r requirements.txt
+python export_model.py && python profile_ort.py 1
+```
 
 ## References
 
