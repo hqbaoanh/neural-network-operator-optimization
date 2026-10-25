@@ -36,6 +36,7 @@ set(WARNING_FLAGS -Wall -Wextra -Wpedantic)
 
 add_library(gemm
   src/gemm_naive.cpp
+  src/gemm_reordered.cpp
   src/kernels.cpp
   src/threads.cpp
 )

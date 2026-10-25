@@ -19,6 +19,10 @@ using GemmFn = void (*)(int M, int N, int K, const float* A, const float* B, flo
 // Stage 1: textbook triple loop (i, j, k). The baseline everything is measured against.
 void gemm_naive(int M, int N, int K, const float* A, const float* B, float* C);
 
+// Stage 2: same arithmetic, loops reordered to (i, k, j) so the inner loop
+// walks B and C contiguously and the compiler can vectorize it.
+void gemm_reordered(int M, int N, int K, const float* A, const float* B, float* C);
+
 struct Kernel {
     std::string name;
     GemmFn fn;

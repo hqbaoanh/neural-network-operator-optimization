@@ -28,12 +28,20 @@ a float64 reference.
 |---|---:|---:|
 | ONNX Runtime (MLAS), the target | 15.4 ms | ~104 |
 | Stage 1: naive triple loop | 675.6 ms | 2.3 to 2.5 |
-
+| Stage 2: loop reordering (i, k, j) | 54.0 ms | 29.6 to 29.9 |
  
 The naive kernel is about 44x slower than ONNX Runtime. On this Mac its speed
 is nearly the same for every shape, which suggests it's limited mainly by the
 chain of dependent additions into one running sum (each add waits about 3 to 4
 cycles for the previous one), rather than by memory access.
+
+Reordering the loops to (i, k, j) makes the inner loop walk rows of B and C
+and update independent elements, so the compiler vectorizes it with NEON.
+That gives 12.5x over naive (54.0 ms per forward pass), at almost exactly
+30 GFLOP/s for every shape. A flat number across shapes points to a limit
+inside the core rather than cache misses: each FMA also loads B, loads C and
+stores C, which works out to about one vector FMA per cycle, roughly a
+quarter of peak.
 
 ## Progress
 
