@@ -1,0 +1,43 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / ${{ matrix.compiler }} / sanitize=${{ matrix.sanitize }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # x86-64 Linux: AVX2 micro-kernel
+          - { os: ubuntu-latest, compiler: g++, sanitize: OFF }
+          - { os: ubuntu-latest, compiler: g++, sanitize: ON }
+          - { os: ubuntu-latest, compiler: clang++, sanitize: OFF }
+          - { os: ubuntu-latest, compiler: clang++, sanitize: ON }
+          # Apple Silicon macOS: NEON micro-kernel
+          - { os: macos-latest, compiler: clang++, sanitize: OFF }
+          - { os: macos-latest, compiler: clang++, sanitize: ON }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_CXX_COMPILER=${{ matrix.compiler }} -DGEMM_SANITIZE=${{ matrix.sanitize }}
+
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Test (default threads)
+        run: ctest --test-dir build --output-on-failure
+
+      # Odd thread counts give uneven splits, which is where threading bugs hide.
+      - name: Test (3 threads)
+        run: GEMM_THREADS=3 ctest --test-dir build --output-on-failure
+
+      # CI machines are shared, so the timings are not meaningful; this only
+      # checks that the benchmark runs and every kernel passes its error check.
+      - name: Benchmark smoke test
+        if: matrix.sanitize == 'OFF'
+        run: ./build/bench --skip-naive
