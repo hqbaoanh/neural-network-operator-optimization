@@ -46,7 +46,7 @@ quarter of peak.
 ## Progress
 
 - [x] Stage 1: benchmark harness, float64 correctness tests, CI, naive kernel
-- [ ] Stage 2: loop reordering so the inner loop vectorizes
+- [x] Stage 2: loop reordering so the inner loop vectorizes
 - [ ] Stage 3: cache blocking
 - [ ] Stage 4: multithreading
 - [ ] Stage 5: packed panels + SIMD micro-kernels (NEON on Apple Silicon, AVX2 on x86)
