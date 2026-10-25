@@ -23,6 +23,10 @@ void gemm_naive(int M, int N, int K, const float* A, const float* B, float* C);
 // walks B and C contiguously and the compiler can vectorize it.
 void gemm_reordered(int M, int N, int K, const float* A, const float* B, float* C);
 
+// Stage 3: cache blocking (tiling). Works on blocks of A, B and C small
+// enough to stay in cache while they are reused.
+void gemm_blocked(int M, int N, int K, const float* A, const float* B, float* C);
+
 struct Kernel {
     std::string name;
     GemmFn fn;
