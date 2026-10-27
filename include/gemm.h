@@ -30,6 +30,13 @@ void gemm_blocked(int M, int N, int K, const float* A, const float* B, float* C)
 // Stage 4: stage 3 split across threads by rows of C.
 void gemm_blocked_mt(int M, int N, int K, const float* A, const float* B, float* C);
 
+// Stage 5: packed A/B panels + a register-tiled SIMD micro-kernel, picked at
+// compile time: 6x16 AVX2/FMA on x86-64, 8x12 NEON on 64-bit ARM.
+// Single-threaded and multithreaded versions.
+void gemm_simd(int M, int N, int K, const float* A, const float* B, float* C);
+void gemm_simd_mt(int M, int N, int K, const float* A, const float* B, float* C);
+const char* simd_isa_name();  // "avx2" or "neon"
+
 struct Kernel {
     std::string name;
     GemmFn fn;

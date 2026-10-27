@@ -39,12 +39,20 @@ add_library(gemm
   src/gemm_reordered.cpp
   src/gemm_blocked.cpp
   src/gemm_blocked_mt.cpp
+  src/gemm_simd.cpp
   src/kernels.cpp
   src/threads.cpp
 )
 target_include_directories(gemm PUBLIC include PRIVATE src)
 target_compile_options(gemm PRIVATE ${GEMM_FLAGS} ${WARNING_FLAGS})
 target_link_libraries(gemm PUBLIC Threads::Threads)
+
+# Optional block-size overrides for the SIMD kernel (see src/gemm_simd.cpp).
+foreach(param GEMM_MC GEMM_KC GEMM_NC)
+  if(DEFINED ${param})
+    target_compile_definitions(gemm PRIVATE ${param}=${${param}})
+  endif()
+endforeach()
 
 add_executable(bench bench/bench.cpp)
 target_compile_options(bench PRIVATE -O2 ${WARNING_FLAGS})

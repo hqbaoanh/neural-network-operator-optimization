@@ -73,7 +73,8 @@ int main(int argc, char** argv) {
         {"square_1024", 1024, 1024, 1024, 0},
     };
 
-    std::printf("threads for *_mt kernels: %d\n\n", gemm_num_threads());
+    std::printf("threads for *_mt kernels: %d\n", gemm_num_threads());
+    std::printf("SIMD micro-kernel: %s\n\n", simd_isa_name());
     std::printf("%-12s %-11s %10s %10s %9s %10s\n", "shape", "kernel", "ms", "GFLOP/s", "speedup",
                 "rel_err");
 
