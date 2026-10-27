@@ -30,6 +30,8 @@ a float64 reference.
 | Stage 1: naive triple loop | 675.6 ms | 2.3 to 2.5 | 1x |
 | Stage 2: loop reordering (i, k, j) | 54.0 ms | 29.6 to 29.9 | 12.5x |
 | Stage 3: cache blocking | 62.1 ms | 24.6 to 27.5 | 10.9x |
+| Stage 4: cache blocking + 5 threads | 16.3 ms | 92.9 to 106.3 |
+| Stage 4: cache blocking + 11 threads | 12.6 ms | 123.9 to 139.5 |
  
 ### What the numbers show
 
@@ -53,12 +55,21 @@ overhead. The kernel was limited by loading and storing C, which blocking
 doesn't change. On a 2-core x86 cloud VM with smaller caches, the same code
 was 1.3x to 1.4x faster than reordering on most shapes.
 
+Splitting the rows of C across threads needs no locks, since each thread
+writes only its own rows. With the 5 performance cores it is 4.0x faster
+than one thread (16.3 ms). All 11 cores reach 5.1x (12.6 ms): the M3 Pro's
+6 efficiency cores are roughly half as fast on this kernel, and because the
+rows are split evenly, the performance cores finish early and wait for them.
+18 threads gave the same 12.6 ms, so threads beyond the core count add
+nothing. These are multithreaded numbers, so they are not comparable with
+ONNX Runtime's single-threaded 15.4 ms.
+
 ## Progress
 
 - [x] Stage 1: benchmark harness, float64 correctness tests, CI, naive kernel
 - [x] Stage 2: loop reordering so the inner loop vectorizes
 - [x] Stage 3: cache blocking
-- [ ] Stage 4: multithreading
+- [x] Stage 4: multithreading
 - [ ] Stage 5: packed panels + SIMD micro-kernels (NEON on Apple Silicon, AVX2 on x86)
 
 ## Build and run
