@@ -33,7 +33,7 @@ int main() {
 
         for (const Kernel& kernel : all_kernels()) {
             // Fill C with garbage to check that kernels overwrite it instead of adding to it.
-            std::vector<float> C(static_cast<size_t>(s.M) * s.N, 12345.0f);
+            std::vector<float> C(static_cast<size_t>(s.M) * s.N, 6767.0f);
             kernel.fn(s.M, s.N, s.K, A.data(), B.data(), C.data());
 
             const double err = max_relative_error(C, ref);

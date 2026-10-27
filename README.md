@@ -1,98 +1,106 @@
 # Neural Network Operator Optimization
 
-Where does the time go when a CPU runs a Transformer, and how far can a hand written kernel close the gap to a production library? 
+I profiled a small Transformer encoder in ONNX Runtime and found that matrix
+multiplication (GEMM) takes about 85% of the kernel time. So I wrote a GEMM in
+C++ from scratch, in five stages, and measured each one on the exact shapes the
+model runs.
 
-I exported a small Transformer encoder from PyTorch to ONNX and profiled it in ONNX Runtime (ORT). Matrix multiplication (GEMM) takes about 85% of the kernel time, so I'm writing a C++ GEMM from scratch in stages, each one fixing the main bottleneck of the one before, and measuring every stage on the exact matrix shapes the model runs. 
+The final version is a packed GEMM in the style of BLIS with a hand-written
+ARM NEON micro-kernel. On one core of my M3 Pro it gets to 95% of ONNX
+Runtime's own GEMM, and on all 11 cores it's 159x faster than the naive loop.
+There's also an AVX2 micro-kernel for x86, which CI builds and tests.
 
-## Profiling: why GEMM 
+![GFLOP/s by kernel and shape](results/m3_pro.png)
 
-`export_model.py` builds a 2 layer encoder (d_model 512, 8 heads, FFN 2048, sequence length 128) with random weights, since only speed matters here. 
+## Results
 
-`profile_ort.py` runs it 100 times in ONNX Runtime and sums kernel time by operator. 
+MacBook Pro, M3 Pro (5 performance + 6 efficiency cores), Apple clang 17,
+`-O3`. All numbers are from one session, medians, checked against a float64
+reference. Raw data is in [`results/m3_pro.csv`](results/m3_pro.csv).
 
-On my MacBook (M3 Pro, 11 core CPU, 18 GB, 1 thread), `Gemm` is about 85% of kernel time across runs, and about 89% including the attention matmuls. The four weight GEMMs ($M \times K \times N$), each run twice per forward pass: 
+Time for all the GEMMs in one forward pass (1.61 GFLOP):
 
-| Layer | Shape |
-|---|---|
-| QKV projection | 128 x 512 x 1536 |
-| Attention output | 128 x 512 x 512 |
-| FFN up | 128 x 512 x 2048 |
-| FFN down | 128 x 2048 x 512 |
+| Kernel | Threads | Time | GFLOP/s | vs naive |
+|---|---:|---:|---:|---:|
+| ONNX Runtime (MLAS) | 1 | 15.9 ms | 101 | |
+| 1. Naive triple loop | 1 | 727.0 ms | 2.2 | 1x |
+| 2. Loop reordering (i, k, j) | 1 | 55.4 ms | 29.1 | 13x |
+| 3. Cache blocking | 1 | 64.8 ms | 24.9 | 11x |
+| 4. Blocking + threads | 11 | 12.5 ms | 128 | 58x |
+| 5. Packed NEON micro-kernel | 1 | 16.8 ms | 95.8 | 43x |
+| 5. Packed NEON micro-kernel | 11 | 4.6 ms | 353 | 159x |
 
-## Results so far
- 
-Same machine, Apple clang 17, `-O3`, 1 thread unless the row says otherwise. Every kernel is checked against a float64 reference.
- 
-| Kernel | All GEMMs in one forward pass | GFLOP/s | vs naive |
-|---|---:|---:|---:|
-| ONNX Runtime (MLAS), the target | 15.4 ms | ~104 | 44x |
-| Stage 1: naive triple loop | 675.6 ms | 2.3 to 2.5 | 1x |
-| Stage 2: loop reordering (i, k, j) | 54.0 ms | 29.6 to 29.9 | 12.5x |
-| Stage 3: cache blocking | 62.1 ms | 24.6 to 27.5 | 10.9x |
-| Stage 4: cache blocking + 5 threads | 16.3 ms | 92.9 to 106.3 | 45.7x |
-| Stage 4: cache blocking + 11 threads | 12.6 ms | 123.9 to 139.5 | 59x |
- 
-### What the numbers show
+NumPy on this Mac uses Apple's Accelerate, which does these shapes at around
+1,500 GFLOP/s. That's far beyond what the CPU cores can do, so it's running on
+Apple's matrix coprocessor. ONNX Runtime's MLAS runs on the same cores as my
+kernel, so that's the comparison I use.
 
-The naive kernel is about 44x slower than ONNX Runtime. On this Mac its speed
-is nearly the same for every shape, which suggests it's limited mainly by the
-chain of dependent additions into one running sum (each add waits about 3 to 4
-cycles for the previous one), rather than by memory access.
+## Things I didn't expect
 
-Reordering the loops to (i, k, j) makes the inner loop walk rows of B and C
-and update independent elements, so the compiler vectorizes it with NEON.
-That gives 12.5x over naive (54.0 ms per forward pass), at almost exactly
-30 GFLOP/s for every shape. A flat number across shapes points to a limit
-inside the core rather than cache misses: each FMA also loads B, loads C and
-stores C, which works out to about one vector FMA per cycle, roughly a
-quarter of peak.
+The naive loop runs at the same ~2.2 GFLOP/s for every shape. It isn't waiting
+on memory, it's waiting on itself: every add into the running sum has to wait
+for the previous one.
 
-Cache blocking (64 x 256 x 256 blocks) made things about 15% slower on this
-Mac. The largest B in the model is 4 MB, which already fits in the M3 Pro's
-16 MB L2, so there was no cache problem to fix and the extra loops only add
-overhead. The kernel was limited by loading and storing C, which blocking
-doesn't change. On a 2-core x86 cloud VM with smaller caches, the same code
-was 1.3x to 1.4x faster than reordering on most shapes.
+Reordering the loops gives 13x but then gets stuck at ~29 GFLOP/s for every
+shape. Each vector FMA also has to load B, load C and store C, which caps it at
+about one FMA per cycle. Keeping a tile of C in registers (stage 5) is what got
+past that.
 
-Splitting the rows of C across threads needs no locks, since each thread
-writes only its own rows. With the 5 performance cores it is 4.0x faster
-than one thread (16.3 ms). All 11 cores reach 5.1x (12.6 ms): the M3 Pro's
-6 efficiency cores are roughly half as fast on this kernel, and because the
-rows are split evenly, the performance cores finish early and wait for them.
-18 threads gave the same 12.6 ms, so threads beyond the core count add
-nothing. These are multithreaded numbers, so they are not comparable with
-ONNX Runtime's single-threaded 15.4 ms.
+Cache blocking made things about 15% slower on my Mac. The biggest B in the
+model is 4 MB and the M3 Pro's L2 is 16 MB, so B was already in cache and the
+extra loops were pure overhead. On an x86 cloud VM with 2 MB of L2 per core,
+the same code was 1.3x to 1.4x faster.
 
-## Progress
+The efficiency cores help the simple kernel but not the fast one. For the
+blocked kernel, 11 threads beat 5 (12.5 vs 15.7 ms). For the NEON kernel they
+barely do (4.6 vs 4.7 ms), and on the smallest shape 5 threads win. The NEON
+calls are so short now (under 0.3 ms) that starting threads and having each one
+pack its own copy of A starts to matter.
 
-- [x] Stage 1: benchmark harness, float64 correctness tests, CI, naive kernel
-- [x] Stage 2: loop reordering so the inner loop vectorizes
-- [x] Stage 3: cache blocking
-- [x] Stage 4: multithreading
-- [ ] Stage 5: packed panels + SIMD micro-kernels (NEON on Apple Silicon, AVX2 on x86)
+## How it works
+
+Each stage is one file in `src/` with a comment explaining the change.
+
+1. `gemm_naive.cpp`: the textbook i, j, k loop.
+2. `gemm_reordered.cpp`: i, k, j order, so the compiler can vectorize the inner loop.
+3. `gemm_blocked.cpp`: 64 x 256 x 256 blocks so a piece of B stays in cache.
+4. `gemm_blocked_mt.cpp`: rows of C split across threads (no locks needed).
+5. `gemm_simd.cpp`: packs A and B into panels and calls a micro-kernel that
+   keeps a tile of C in registers. The NEON kernel (`microkernel_neon.h`) uses
+   an 8 x 12 tile, 24 of the 32 NEON registers. The AVX2 one
+   (`microkernel_avx2.h`) uses 6 x 16. Which one gets built depends on the CPU.
+
+I checked the assembly to make sure the inner loop is just FMAs with nothing
+spilled to the stack. My first NEON version kept the accumulators in an array
+and GCC spilled all 24 of them every iteration.
 
 ## Build and run
- 
-Needs a C++17 compiler and CMake 3.16+, on Apple Silicon or x86-64 with AVX2.
- 
+
+Needs CMake 3.16+ and a C++17 compiler, on Apple Silicon or x86-64 with AVX2.
+
 ```bash
-cmake -B build
-cmake --build build -j
-ctest --test-dir build --output-on-failure    # correctness tests
-./build/bench                                  # benchmark
+cmake -B build && cmake --build build -j
+ctest --test-dir build --output-on-failure
+./build/bench --csv results/my_machine.csv     # GEMM_THREADS=N sets the thread count
 ```
- 
-To redo the profiling:
- 
-```bash
-pip install -r requirements.txt
-python export_model.py && python profile_ort.py 1
-```
+
+Profiling and comparisons need `pip install -r requirements.txt`, then
+`python profile_ort.py 1`, `python bench/compare_blas.py 1` and
+`python bench/plot_results.py results/my_machine.csv`.
+
+The tests run every kernel on 15 shapes, including ones that don't divide
+evenly into tiles or blocks, with C pre-filled with garbage. CI runs them on
+macOS (NEON) and Linux (AVX2) with sanitizers on and off.
+
+## Next
+
+- A persistent thread pool and a shared packed A, for better scaling on small shapes
+- Fusing bias and GELU into the micro-kernel
+- Plugging the kernel into ONNX Runtime as a custom op
 
 ## References
 
-- MIT 6.172 Performance Engineering of Software Systems (Fall 2018),
-  Lecture 1: Introduction and Matrix Multiplication, by Charles Leiserson and
-  Julian Shun. The loop reordering, tiling, parallelism and vectorization
-  steps follow the same progression.
-  https://ocw.mit.edu/courses/6-172-performance-engineering-of-software-systems-fall-2018/
+- MIT 6.172 Performance Engineering of Software Systems, Fall 2018, Lecture 1
+  (Leiserson, Shun): https://ocw.mit.edu/courses/6-172-performance-engineering-of-software-systems-fall-2018/
+- Goto and van de Geijn, "Anatomy of High-Performance Matrix Multiplication"
+  (2008), and BLIS: https://github.com/flame/blis
