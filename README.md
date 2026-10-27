@@ -8,7 +8,8 @@ model runs.
 The final version is a packed GEMM in the style of BLIS with a hand-written
 ARM NEON micro-kernel. On one core of my M3 Pro it gets to 95% of ONNX
 Runtime's own GEMM, and on all 11 cores it's 159x faster than the naive loop.
-There's also an AVX2 micro-kernel for x86, which CI builds and tests.
+There's also an AVX2 micro-kernel for x86, which CI tests and I benchmarked on
+a UBC Xeon server.
 
 ![GFLOP/s by kernel and shape](results/m3_pro.png)
 
@@ -39,6 +40,22 @@ NumPy on this Mac uses Apple's Accelerate, which does these shapes at around
 Apple's matrix coprocessor. ONNX Runtime's MLAS runs on the same cores as my
 kernel, so that's the comparison I use.
 
+### x86 (AVX2)
+
+UBC CS server, Intel Xeon Gold 5218 at 2.3 GHz (1 MB of L2 per core), GCC,
+1 thread. It's a shared machine, but two runs agreed within about 2%. Raw data
+is in [`results/ubc_x86.csv`](results/ubc_x86.csv).
+
+| Kernel | Time | GFLOP/s | vs naive |
+|---|---:|---:|---:|
+| 1. Naive | 2205.7 ms | 0.7 | 1x |
+| 2. Loop reordering | 153.5 ms | 10.5 | 14x |
+| 3. Cache blocking | 143.2 ms | 11.3 | 15x |
+| 5. Packed AVX2 micro-kernel | 32.0 ms | 50.3 | 69x |
+
+The micro-kernel is the big step on both chips: 4.5x over blocking here and
+3.9x on the Mac.
+
 ## Things I didn't expect
 
 The naive loop runs at the same ~2.2 GFLOP/s for every shape, which I didn't
@@ -53,8 +70,11 @@ past that.
 
 Cache blocking made things about 15% slower on my Mac. The biggest B in the
 model is 4 MB and the M3 Pro's L2 is 16 MB, so B was already in cache and the
-extra loops were pure overhead. On an x86 cloud VM with 2 MB of L2 per core,
-the same code was 1.3x to 1.4x faster.
+extra loops were pure overhead. On a UBC Xeon server, where each core has only
+1 MB of L2, the same code helped on the shapes with a 4 MB B (1.11x on FFN up,
+1.17x on QKV, 1.32x on the 1024 square) but was 14% slower on the attention
+output, whose B is only 1 MB. FFN down didn't change at all, which I can't
+fully explain yet.
 
 For the blocked kernel, using all 11 cores beat using just the 5 performance
 cores (12.5 vs 15.7 ms). For the NEON kernel it barely helped (4.6 vs 4.7 ms),
