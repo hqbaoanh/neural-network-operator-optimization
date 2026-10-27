@@ -26,9 +26,13 @@ Time for all the GEMMs in one forward pass (1.61 GFLOP):
 | 1. Naive triple loop | 1 | 727.0 ms | 2.2 | 1x |
 | 2. Loop reordering (i, k, j) | 1 | 55.4 ms | 29.1 | 13x |
 | 3. Cache blocking | 1 | 64.8 ms | 24.9 | 11x |
+| 4. Blocking + threads | 5 | 15.7 ms | 102 | 46x |
 | 4. Blocking + threads | 11 | 12.5 ms | 128 | 58x |
 | 5. Packed NEON micro-kernel | 1 | 16.8 ms | 95.8 | 43x |
+| 5. Packed NEON micro-kernel | 5 | 4.7 ms | 340 | 153x |
 | 5. Packed NEON micro-kernel | 11 | 4.6 ms | 353 | 159x |
+
+5 threads is one per performance core; 11 adds the 6 efficiency cores.
 
 NumPy on this Mac uses Apple's Accelerate, which does these shapes at around
 1,500 GFLOP/s. That's far beyond what the CPU cores can do, so it's running on
@@ -37,9 +41,10 @@ kernel, so that's the comparison I use.
 
 ## Things I didn't expect
 
-The naive loop runs at the same ~2.2 GFLOP/s for every shape. It isn't waiting
-on memory, it's waiting on itself: every add into the running sum has to wait
-for the previous one.
+The naive loop runs at the same ~2.2 GFLOP/s for every shape, which I didn't
+expect since it reads B down columns. My best explanation is the running sum:
+every add has to wait for the previous one to finish, and that alone works out
+to about this speed.
 
 Reordering the loops gives 13x but then gets stuck at ~29 GFLOP/s for every
 shape. Each vector FMA also has to load B, load C and store C, which caps it at
@@ -51,11 +56,11 @@ model is 4 MB and the M3 Pro's L2 is 16 MB, so B was already in cache and the
 extra loops were pure overhead. On an x86 cloud VM with 2 MB of L2 per core,
 the same code was 1.3x to 1.4x faster.
 
-The efficiency cores help the simple kernel but not the fast one. For the
-blocked kernel, 11 threads beat 5 (12.5 vs 15.7 ms). For the NEON kernel they
-barely do (4.6 vs 4.7 ms), and on the smallest shape 5 threads win. The NEON
-calls are so short now (under 0.3 ms) that starting threads and having each one
-pack its own copy of A starts to matter.
+For the blocked kernel, using all 11 cores beat using just the 5 performance
+cores (12.5 vs 15.7 ms). For the NEON kernel it barely helped (4.6 vs 4.7 ms),
+and on the smallest shape 5 threads were faster. I haven't tested why yet, but
+the NEON calls are short (0.28 ms for the smallest shape), so starting threads
+and having each one pack its own copy of A probably matters a lot more there.
 
 ## How it works
 
