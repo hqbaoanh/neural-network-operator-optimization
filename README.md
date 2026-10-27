@@ -21,8 +21,7 @@ On my MacBook (M3 Pro, 11 core CPU, 18 GB, 1 thread), `Gemm` is about 85% of ker
 
 ## Results so far
  
-Same machine, 1 thread, Apple clang 17, `-O3`. Every kernel is checked against
-a float64 reference.
+Same machine, Apple clang 17, `-O3`, 1 thread unless the row says otherwise. Every kernel is checked against a float64 reference.
  
 | Kernel | All GEMMs in one forward pass | GFLOP/s | vs naive |
 |---|---:|---:|---:|
@@ -30,8 +29,8 @@ a float64 reference.
 | Stage 1: naive triple loop | 675.6 ms | 2.3 to 2.5 | 1x |
 | Stage 2: loop reordering (i, k, j) | 54.0 ms | 29.6 to 29.9 | 12.5x |
 | Stage 3: cache blocking | 62.1 ms | 24.6 to 27.5 | 10.9x |
-| Stage 4: cache blocking + 5 threads | 16.3 ms | 92.9 to 106.3 |
-| Stage 4: cache blocking + 11 threads | 12.6 ms | 123.9 to 139.5 |
+| Stage 4: cache blocking + 5 threads | 16.3 ms | 92.9 to 106.3 | 45.7x |
+| Stage 4: cache blocking + 11 threads | 12.6 ms | 123.9 to 139.5 | 59x |
  
 ### What the numbers show
 
