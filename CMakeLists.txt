@@ -38,6 +38,7 @@ add_library(gemm
   src/gemm_naive.cpp
   src/gemm_reordered.cpp
   src/gemm_blocked.cpp
+  src/gemm_blocked_mt.cpp
   src/kernels.cpp
   src/threads.cpp
 )

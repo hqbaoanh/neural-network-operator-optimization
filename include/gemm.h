@@ -27,6 +27,9 @@ void gemm_reordered(int M, int N, int K, const float* A, const float* B, float* 
 // enough to stay in cache while they are reused.
 void gemm_blocked(int M, int N, int K, const float* A, const float* B, float* C);
 
+// Stage 4: stage 3 split across threads by rows of C.
+void gemm_blocked_mt(int M, int N, int K, const float* A, const float* B, float* C);
+
 struct Kernel {
     std::string name;
     GemmFn fn;
