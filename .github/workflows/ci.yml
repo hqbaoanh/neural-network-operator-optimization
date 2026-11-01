@@ -32,12 +32,11 @@ jobs:
       - name: Test (default threads)
         run: ctest --test-dir build --output-on-failure
 
-      # Odd thread counts give uneven splits, which is where threading bugs hide.
+      # odd thread count -> uneven split
       - name: Test (3 threads)
         run: GEMM_THREADS=3 ctest --test-dir build --output-on-failure
 
-      # CI machines are shared, so the timings are not meaningful; this only
-      # checks that the benchmark runs and every kernel passes its error check.
+      # timings on CI mean nothing, just checks bench runs and passes the error check
       - name: Benchmark smoke test
         if: matrix.sanitize == 'OFF'
         run: ./build/bench --skip-naive

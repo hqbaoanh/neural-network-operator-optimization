@@ -1,23 +1,16 @@
-"""Times NumPy's matmul on the same shapes as bench.cpp.
+"""Time numpy matmul (OpenBLAS / Accelerate) on the bench.cpp shapes.
 
-NumPy hands float32 matmul to a production BLAS library: usually OpenBLAS on
-Linux and Windows, and Apple's Accelerate on recent Apple Silicon Macs (the
-script prints which one it found). This is the "how close are we to a library
-people actually ship" number. Run it with the same thread count you give the
-C++ benchmark:
+usage: python bench/compare_blas.py [threads]
 
-    python bench/compare_blas.py          # 1 thread
-    python bench/compare_blas.py 2        # 2 threads
-
-Note: Accelerate can run matmul on Apple's matrix coprocessor (AMX) rather
-than the CPU's NEON units, so on a Mac this is not a like-for-like comparison
-with a CPU kernel. It shows what dedicated matrix hardware buys you.
+On Mac this uses Accelerate, which runs on the AMX coprocessor, not the CPU
+cores (~1500 GFLOP/s), so it's not a fair comparison for my kernel.
+I compare against ORT's MLAS instead.
 """
 import os
 import sys
 
 THREADS = sys.argv[1] if len(sys.argv) > 1 else "1"
-# The BLAS thread pool is created when NumPy is imported, so set these first.
+# has to be set before importing numpy (BLAS makes its thread pool on import)
 for var in ("OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "OMP_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
     os.environ[var] = THREADS
 
@@ -35,7 +28,7 @@ SHAPES = [  # (name, M, N, K), same as bench.cpp
 
 
 def blas_description():
-    """Which BLAS NumPy uses, and (for OpenBLAS) which CPU kernels it picked at runtime."""
+    """which BLAS numpy is using (+ OpenBLAS's CPU kernel if threadpoolctl is there)"""
     try:
         name = np.show_config(mode="dicts")["Build Dependencies"]["blas"]["name"]
     except Exception:

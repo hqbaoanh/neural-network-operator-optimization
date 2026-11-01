@@ -1,8 +1,5 @@
-// Ground truth for correctness checks.
-//
-// The reference accumulates in double precision, so its own rounding error
-// is far below float32's. Comparing a float32 kernel against it measures the
-// kernel's error, not the reference's.
+// float64 reference for checking kernels. Its own rounding error is tiny
+// compared to float32, so the difference is basically all the kernel's error.
 #pragma once
 
 #include <algorithm>
@@ -23,8 +20,7 @@ inline void gemm_reference_f64(int M, int N, int K, const float* A, const float*
     }
 }
 
-// max |C - ref| / max |ref|. A relative measure so the threshold doesn't
-// depend on the size of the numbers in the matrices.
+// max |C - ref| / max |ref| (relative, so it doesn't depend on the scale of the values)
 inline double max_relative_error(const std::vector<float>& C, const std::vector<double>& ref) {
     double max_diff = 0.0, max_ref = 0.0;
     for (size_t i = 0; i < ref.size(); ++i) {
@@ -34,10 +30,8 @@ inline double max_relative_error(const std::vector<float>& C, const std::vector<
     return max_ref > 0.0 ? max_diff / max_ref : max_diff;
 }
 
-// Expected float32 error grows roughly like sqrt(K) * machine epsilon, and
-// the order kernels add things in differs. 1e-5 * sqrt(K) leaves a safe margin
-// over that (float32 epsilon is ~1.2e-7) while still catching real bugs, which
-// show up as errors of order 1.
+// float32 error grows roughly like sqrt(K) * eps (eps ~1.2e-7), and kernels add in
+// different orders. 1e-5 * sqrt(K) is well above that; real bugs give errors ~1.
 inline double error_tolerance(int K) { return 1e-5 * std::sqrt(static_cast<double>(K)); }
 
 inline std::vector<float> random_matrix(int rows, int cols, unsigned seed) {

@@ -1,13 +1,6 @@
-// Benchmarks every kernel on the GEMM shapes that ONNX Runtime runs for the
-// 2-layer encoder (see profile_ort.py), plus a square 1024 case for reference.
-//
-//   ./bench                     all kernels, all shapes
-//   ./bench --csv results.csv   also write the numbers to a CSV file
-//   ./bench --skip-naive        skip the slow baseline (speedups then can't be computed)
-//
-// Each measurement is the median of several runs after a warm-up run. Every
-// kernel's output is also checked against the float64 reference, so a fast
-// but wrong kernel shows up immediately.
+// times every kernel on the encoder's GEMM shapes (from profile_ort.py) + a 1024 square.
+//   ./bench [--csv out.csv] [--skip-naive]
+// median after a warm-up run; every result is also checked against the float64 reference.
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -24,7 +17,7 @@ namespace {
 struct Shape {
     std::string name;
     int M, N, K;
-    int calls_per_forward;  // how many times one forward pass runs this shape
+    int calls_per_forward;  // times this shape runs per forward pass
 };
 
 double seconds_now() {
@@ -32,11 +25,10 @@ double seconds_now() {
     return std::chrono::duration<double>(clock::now().time_since_epoch()).count();
 }
 
-// Median time of one call, in seconds. Runs at least 3 times and keeps going
-// until roughly min_total seconds have passed, so fast kernels get many samples.
+// median seconds per call. at least 3 runs, then keep going until ~min_total s (max 200)
 double time_kernel(const Kernel& kernel, const Shape& s, const float* A, const float* B,
                    float* C, double min_total = 0.5) {
-    kernel.fn(s.M, s.N, s.K, A, B, C);  // warm-up: caches, page faults, thread start-up
+    kernel.fn(s.M, s.N, s.K, A, B, C);  // warm-up
     std::vector<double> samples;
     const double start = seconds_now();
     while (samples.size() < 3 || (seconds_now() - start < min_total && samples.size() < 200)) {
@@ -64,7 +56,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    // M = 128 tokens. Two encoder layers, so each weight GEMM runs twice per forward pass.
+    // M = 128 tokens. 2 layers -> each shape runs twice per forward pass
     const std::vector<Shape> shapes = {
         {"qkv_proj", 128, 1536, 512, 2},
         {"attn_out", 128, 512, 512, 2},
@@ -88,7 +80,7 @@ int main(int argc, char** argv) {
         std::fprintf(csv, "shape,M,N,K,kernel,threads,ms,gflops,speedup_vs_naive,rel_err\n");
     }
 
-    std::map<std::string, double> forward_ms;  // kernel -> time for all GEMMs in one forward pass
+    std::map<std::string, double> forward_ms;  // kernel -> ms for all GEMMs in one forward pass
     bool all_correct = true;
 
     for (const Shape& s : shapes) {

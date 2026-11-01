@@ -20,6 +20,6 @@ void parallel_for_threads(int num_threads, const std::function<void(int, int)>& 
     for (int t = 1; t < num_threads; ++t) {
         workers.emplace_back(work, t, num_threads);
     }
-    work(0, num_threads);  // the calling thread does a share too
+    work(0, num_threads);  // main thread does part 0
     for (auto& w : workers) w.join();
 }

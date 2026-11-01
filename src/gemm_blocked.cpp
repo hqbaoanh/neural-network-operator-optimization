@@ -1,15 +1,8 @@
-// Stage 3: cache blocking (tiling).
-//
-// In stage 2, for each row i we stream through ALL of B (K x N floats, up to
-// 4 MB for the 2048 x 512 shape). That is bigger than L1 and L2, so B gets
-// re-fetched from far away for every single row of C.
-//
-// Blocking fixes this: cut the problem into a block of B that is KC x NC
-// (here 256 x 256 floats = 256 KB, sized for L2) and reuse that block for
-// MC rows of A before moving on. Inside the block the loop order is the same
-// cache-friendly (i, k, j) as stage 2.
-//
-// The block sizes are compile-time constants; see the README for how to tune them.
+// stage 3: cache blocking
+// stage 2 reads all of B (up to 4 MB) for every row of C. here B is cut into
+// KC x NC blocks (256 x 256 floats = 256 KB) and each block is reused for MC rows
+// before moving on. same i, k, j order inside a block.
+// note: slower on the M3 Pro (B already fits in its 16 MB L2), helps on the Xeon (1 MB L2).
 #include <algorithm>
 #include <cstring>
 
@@ -22,7 +15,7 @@ constexpr int KC = 256;  // depth per block
 constexpr int NC = 256;  // columns of B / C per block
 }  // namespace
 
-// Computes rows [row_begin, row_end) of C. Shared with the threaded version.
+// rows [row_begin, row_end) of C; stage 4 calls this per thread
 void gemm_blocked_rows(int row_begin, int row_end, int N, int K,
                        const float* A, const float* B, float* C) {
     for (int i = row_begin; i < row_end; ++i) {
@@ -34,7 +27,7 @@ void gemm_blocked_rows(int row_begin, int row_end, int N, int K,
             const int kc = std::min(KC, K - pc);
             for (int ic = row_begin; ic < row_end; ic += MC) {
                 const int mc = std::min(MC, row_end - ic);
-                // One block: C[ic:ic+mc, jc:jc+nc] += A[ic:ic+mc, pc:pc+kc] * B[pc:pc+kc, jc:jc+nc]
+                // C[ic:ic+mc, jc:jc+nc] += A[ic:ic+mc, pc:pc+kc] * B[pc:pc+kc, jc:jc+nc]
                 for (int i = ic; i < ic + mc; ++i) {
                     float* c_row = C + static_cast<size_t>(i) * N + jc;
                     for (int k = pc; k < pc + kc; ++k) {

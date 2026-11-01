@@ -1,14 +1,8 @@
-// NEON micro-kernel for 64-bit ARM (Apple Silicon, Graviton, ...): an 8 x 12 tile of C.
-//
-// A NEON register holds 4 floats (half of AVX2), but there are 32 of them
-// (twice AVX2). So the tile is taller and narrower than the AVX2 one:
-// 24 accumulators (8 rows x 3 vectors of 4 columns), 3 registers for the
-// current row of B and 2 for the 8 values of A: 29 of 32.
-//
-// Instead of broadcasting A from memory like the AVX2 kernel does, it loads
-// all 8 values of A into two registers and uses the "by element" form of FMA
-// (vfmaq_laneq_f32), which multiplies by one lane of a register directly.
-// Per step of k: 5 vector loads, 24 FMAs = 192 flops.
+// NEON 8 x 12 micro-kernel (64-bit ARM)
+// 4 floats per register, 32 registers
+// -> 24 accumulators (8 rows x 3) + 3 for B + 2 for A = 29/32
+// A: load 8 values into 2 regs, use vfmaq_laneq_f32 (FMA by one lane) instead of broadcasting
+// per k: 5 loads, 24 FMAs, 192 flops
 #pragma once
 
 #include <arm_neon.h>
@@ -21,18 +15,16 @@ constexpr const char* kName = "neon";
 constexpr int MR = 8;
 constexpr int NR = 12;
 
-// Default cache block sizes (multiples of MR and NR). Apple M-series cores
-// have a 128 KB L1 data cache and a large shared L2, so KC can be a bit larger.
+// default block sizes (multiples of MR, NR). M-series L1d is 128 KB so KC can be bigger
 constexpr int kDefaultMC = 128;
 constexpr int kDefaultKC = 384;
 constexpr int kDefaultNC = 1008;
 
 namespace detail {
-// One row of the tile: (c0 | c1 | c2) += (b0 | b1 | b2) * a[Lane].
-// The lane has to be a compile-time constant, hence the template parameter.
-// The accumulators are separate named variables passed by reference (not an
-// array) because GCC keeps those in registers but spills arrays to the stack
-// on every iteration.
+// one row of the tile: (c0 c1 c2) += (b0 b1 b2) * a[Lane]
+// Lane must be a compile-time constant -> template
+// named variables, not an array: GCC (13) stores an array of accumulators to the
+// stack every k step. clang doesn't.
 template <int Lane>
 inline void fma_row(float32x4_t& c0, float32x4_t& c1, float32x4_t& c2, float32x4_t b0,
                     float32x4_t b1, float32x4_t b2, float32x4_t a) {
@@ -48,8 +40,7 @@ inline void add_row(float* row, float32x4_t c0, float32x4_t c1, float32x4_t c2) 
 }
 }  // namespace detail
 
-// C[0:8, 0:12] += a_panel * b_panel, where C has row stride ldc.
-// a: kc steps of MR floats. b: kc steps of NR floats.
+// C[0:8, 0:12] += a_panel * b_panel (C row stride ldc)
 inline void micro_kernel(int kc, const float* a, const float* b, float* C, int ldc) {
     const float32x4_t zero = vdupq_n_f32(0.0f);
     float32x4_t c00 = zero, c01 = zero, c02 = zero;
@@ -65,8 +56,8 @@ inline void micro_kernel(int kc, const float* a, const float* b, float* C, int l
         const float32x4_t b0 = vld1q_f32(b);
         const float32x4_t b1 = vld1q_f32(b + 4);
         const float32x4_t b2 = vld1q_f32(b + 8);
-        const float32x4_t a_lo = vld1q_f32(a);      // A rows 0-3 at this k
-        const float32x4_t a_hi = vld1q_f32(a + 4);  // A rows 4-7
+        const float32x4_t a_lo = vld1q_f32(a);      // rows 0-3
+        const float32x4_t a_hi = vld1q_f32(a + 4);  // rows 4-7
 
         detail::fma_row<0>(c00, c01, c02, b0, b1, b2, a_lo);
         detail::fma_row<1>(c10, c11, c12, b0, b1, b2, a_lo);

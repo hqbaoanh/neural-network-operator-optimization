@@ -1,9 +1,6 @@
-// AVX2/FMA micro-kernel for x86-64: a 6 x 16 tile of C.
-//
-// An AVX2 register (YMM) holds 8 floats and there are 16 of them. The tile
-// uses 12 registers as accumulators (6 rows x 2 vectors of 8 columns), 2 for
-// the current row of B, and 1 for a broadcast value of A: 15 of 16.
-// Per step of k: 2 loads of B, 6 broadcasts of A, 12 FMAs = 192 flops.
+// AVX2 6 x 16 micro-kernel (x86-64)
+// 8 floats per register, 16 registers -> 12 accumulators (6 rows x 2) + 2 for B + 1 for A = 15/16
+// per k: 2 B loads, 6 A broadcasts, 12 FMAs, 192 flops
 #pragma once
 
 #include <immintrin.h>
@@ -16,13 +13,12 @@ constexpr const char* kName = "avx2";
 constexpr int MR = 6;
 constexpr int NR = 16;
 
-// Default cache block sizes (multiples of MR and NR).
+// default block sizes (multiples of MR, NR)
 constexpr int kDefaultMC = 144;
 constexpr int kDefaultKC = 256;
 constexpr int kDefaultNC = 1024;
 
-// C[0:6, 0:16] += a_panel * b_panel, where C has row stride ldc.
-// a: kc steps of MR floats. b: kc steps of NR floats, 32-byte aligned.
+// C[0:6, 0:16] += a_panel * b_panel (C row stride ldc). b must be 32-byte aligned (_mm256_load_ps)
 inline void micro_kernel(int kc, const float* a, const float* b, float* C, int ldc) {
     __m256 c00 = _mm256_setzero_ps(), c01 = _mm256_setzero_ps();
     __m256 c10 = _mm256_setzero_ps(), c11 = _mm256_setzero_ps();

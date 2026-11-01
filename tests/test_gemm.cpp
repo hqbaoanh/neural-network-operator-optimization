@@ -1,9 +1,6 @@
-// Correctness tests: every kernel against the float64 reference.
-//
-// The shapes are picked to hit edge cases rather than to be fast:
-// sizes of 1, sizes that are not multiples of the micro-kernel tile (6 x 16
-// for AVX2, 8 x 12 for NEON), sizes just over a cache block, and the real
-// transformer shapes.
+// every kernel vs the float64 reference.
+// shapes: size 1, sizes that don't divide the tiles (6x16 AVX2, 8x12 NEON),
+// just over a block size, and the real model shapes.
 #include <cstdio>
 #include <vector>
 
@@ -32,7 +29,7 @@ int main() {
         gemm_reference_f64(s.M, s.N, s.K, A.data(), B.data(), ref);
 
         for (const Kernel& kernel : all_kernels()) {
-            // Fill C with garbage to check that kernels overwrite it instead of adding to it.
+            // garbage in C: catches kernels that add to C instead of overwriting it
             std::vector<float> C(static_cast<size_t>(s.M) * s.N, 6767.0f);
             kernel.fn(s.M, s.N, s.K, A.data(), B.data(), C.data());
 

@@ -1,10 +1,6 @@
-// Stage 2: loop reordering (i, k, j).
-//
-// Same multiplications and additions as stage 1, different order. Fix a row i
-// and a k, take the scalar a = A[i][k], and add a * (row k of B) into row i of C.
-// Now the innermost loop reads B[k][0..N) and C[i][0..N) contiguously:
-// every cache line is fully used, and the loop is a plain "y += a*x" that
-// the compiler turns into 8-wide AVX2 FMA instructions on its own.
+// stage 2: i, k, j
+// row i of C += A[i][k] * row k of B. inner loop now reads B and C in a straight line,
+// and it's just y += a*x so the compiler vectorizes it by itself (NEON / AVX2).
 #include <cstring>
 
 #include "gemm.h"

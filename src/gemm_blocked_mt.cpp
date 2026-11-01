@@ -1,11 +1,6 @@
-// Stage 4: multithreading.
-//
-// Rows of C are independent: row i only reads row i of A (and all of B) and
-// only writes row i of C. So we hand each thread a contiguous range of rows
-// and let it run the stage 3 blocked kernel on that range. No locks needed,
-// since no two threads ever write the same element of C.
-//
-// Thread count comes from GEMM_THREADS (or the number of cores).
+// stage 4: each thread gets a range of rows of C and runs stage 3 on it.
+// row i of C only needs row i of A (+ all of B), so threads never write the same
+// element -> no locks.
 #include <algorithm>
 
 #include "gemm.h"

@@ -1,7 +1,6 @@
-"""Plots GFLOP/s per kernel for each shape from a bench.cpp CSV.
+"""Bar chart of GFLOP/s per kernel and shape from a bench CSV. Saves a .png next to it.
 
-    ./build/bench --csv results/my_machine.csv
-    python bench/plot_results.py results/my_machine.csv
+usage: python bench/plot_results.py results/m3_pro.csv
 """
 import csv
 import sys

@@ -1,10 +1,7 @@
-// Stage 1: naive GEMM.
-//
-// For every output element C[i][j], walk down row i of A and column j of B.
-// The access to B is the problem: B[k*N + j] jumps N floats (2-8 KB here)
-// every iteration of k, so almost every load touches a new cache line, and
-// the compiler cannot vectorize the reduction over k without reordering
-// floating-point additions (which it will not do without -ffast-math).
+// stage 1: naive i, j, k
+// B[k*N + j] jumps N floats (2-8 KB here) every k step, so B is read down a column.
+// Also can't vectorize: sum over k is one long chain of adds and the compiler
+// won't reorder float adds without -ffast-math.
 #include "gemm.h"
 
 void gemm_naive(int M, int N, int K, const float* A, const float* B, float* C) {

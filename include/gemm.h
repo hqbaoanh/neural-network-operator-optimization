@@ -1,14 +1,6 @@
-// gemm.h -- the one interface every kernel in this project implements.
-//
-//   C = A * B
-//
-//   A is M x K, B is K x N, C is M x N, all float32, all row-major and
-//   densely packed (so the leading dimensions are K, N and N).
-//   Every kernel OVERWRITES C; the caller never has to zero it first.
-//
-// Each optimization stage adds one function here and one entry to the
-// registry in kernels.cpp, so the benchmark and tests pick it up
-// automatically.
+// C = A * B. A is M x K, B is K x N, C is M x N, float32, row-major, no padding.
+// Every kernel overwrites C (no need to zero it first).
+// New kernel: declare it here and add it to kernels.cpp so bench and tests run it.
 #pragma once
 
 #include <string>
@@ -16,23 +8,19 @@
 
 using GemmFn = void (*)(int M, int N, int K, const float* A, const float* B, float* C);
 
-// Stage 1: textbook triple loop (i, j, k). The baseline everything is measured against.
+// stage 1: i, j, k triple loop (baseline)
 void gemm_naive(int M, int N, int K, const float* A, const float* B, float* C);
 
-// Stage 2: same arithmetic, loops reordered to (i, k, j) so the inner loop
-// walks B and C contiguously and the compiler can vectorize it.
+// stage 2: i, k, j order
 void gemm_reordered(int M, int N, int K, const float* A, const float* B, float* C);
 
-// Stage 3: cache blocking (tiling). Works on blocks of A, B and C small
-// enough to stay in cache while they are reused.
+// stage 3: cache blocking
 void gemm_blocked(int M, int N, int K, const float* A, const float* B, float* C);
 
-// Stage 4: stage 3 split across threads by rows of C.
+// stage 4: stage 3 split across threads by rows of C
 void gemm_blocked_mt(int M, int N, int K, const float* A, const float* B, float* C);
 
-// Stage 5: packed A/B panels + a register-tiled SIMD micro-kernel, picked at
-// compile time: 6x16 AVX2/FMA on x86-64, 8x12 NEON on 64-bit ARM.
-// Single-threaded and multithreaded versions.
+// stage 5: packing + SIMD micro-kernel (6x16 AVX2 on x86, 8x12 NEON on ARM, picked at compile time)
 void gemm_simd(int M, int N, int K, const float* A, const float* B, float* C);
 void gemm_simd_mt(int M, int N, int K, const float* A, const float* B, float* C);
 const char* simd_isa_name();  // "avx2" or "neon"
@@ -43,9 +31,8 @@ struct Kernel {
     bool threaded;
 };
 
-// All kernels, in stage order. Defined in kernels.cpp.
+// all kernels in stage order (kernels.cpp)
 const std::vector<Kernel>& all_kernels();
 
-// Number of worker threads for the *_mt kernels: $GEMM_THREADS if set,
-// otherwise std::thread::hardware_concurrency(). Defined in threads.cpp.
+// GEMM_THREADS if set, else hardware_concurrency()
 int gemm_num_threads();

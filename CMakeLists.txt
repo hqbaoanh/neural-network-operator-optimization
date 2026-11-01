@@ -17,15 +17,12 @@ if(GEMM_SANITIZE)
   add_link_options(-fsanitize=address,undefined)
 endif()
 
-# Every kernel is built with the same flags, so speedups come from the code
-# and not from one kernel getting better compiler options than another.
+# same flags for every kernel so the speedups come from the code, not the flags
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
-  # -mavx2 -mfma (instead of -march=native) keeps the binary runnable on any
-  # AVX2 machine, including CI runners.
+  # not -march=native, so the binary still runs on other AVX2 machines (CI)
   set(GEMM_FLAGS -O3 -mavx2 -mfma)
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|ARM64")
-  # NEON and fused multiply-add are part of every 64-bit ARM CPU (Apple
-  # Silicon, Graviton, ...), so no extra flags are needed.
+  # NEON + FMA are always there on 64-bit ARM, no flags needed
   set(GEMM_FLAGS -O3)
 else()
   message(FATAL_ERROR "Unsupported CPU '${CMAKE_SYSTEM_PROCESSOR}': this project targets x86-64 with AVX2 or 64-bit ARM")
@@ -47,7 +44,7 @@ target_include_directories(gemm PUBLIC include PRIVATE src)
 target_compile_options(gemm PRIVATE ${GEMM_FLAGS} ${WARNING_FLAGS})
 target_link_libraries(gemm PUBLIC Threads::Threads)
 
-# Optional block-size overrides for the SIMD kernel (see src/gemm_simd.cpp).
+# optional block sizes for stage 5, e.g. -DGEMM_KC=384
 foreach(param GEMM_MC GEMM_KC GEMM_NC)
   if(DEFINED ${param})
     target_compile_definitions(gemm PRIVATE ${param}=${${param}})
